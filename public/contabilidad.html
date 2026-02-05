@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Contabilidad - Pizzería</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: system-ui;
+            background: #f4f6f8
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: auto;
+            padding: 24px
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px
+        }
+
+        .card {
+            background: #fff;
+            padding: 16px;
+            border-radius: 10px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, .05);
+            margin-bottom: 10px;
+        }
+
+        .grid {
+            display: grid;
+            gap: 16px
+        }
+
+        .grid-4 {
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))
+        }
+
+        .value {
+            font-size: 26px;
+            font-weight: 700
+        }
+
+        .btn {
+            padding: 8px 14px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: #fff
+        }
+
+        .btn-secondary {
+            background: #9ca3af;
+            color: #fff
+        }
+
+        .btn[disabled] {
+            opacity: .6;
+            cursor: not-allowed
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #111827;
+            color: #fff;
+            padding: 10px 16px;
+            border-radius: 8px
+        }
+
+        .new {
+            content: none;
+            display: inline-block;
+            width: 5px;
+            height: 15px;
+            border-radius: 20%;
+            background: lightgreen;
+            align-items: center;
+
+        }
+
+        .new:last-child {
+            content: none;
+            display: inline-block;
+            width: 5px;
+            height: 15px;
+            border-radius: 20%;
+            background: lightgreen;
+            rotate: 90deg;
+            margin-right: 5px;
+            align-items: center;
+
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+        }
+
+        label {
+            font-weight: 500;
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        input:focus,
+        select:focus {
+            background: #eef4ff;
+        }
+
+        .form-actions {
+            margin-top: 10px;
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        select,
+        input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            font-family: system-ui;
+            font-size: 14px;
+            background-color: #fff;
+            color: #111827;
+            transition: border-color 0.2s;
+            margin-bottom: 12px;
+        }
+
+        select:focus,
+        input:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        select:hover {
+            border-color: #d1d5db;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container" x-data="app()" x-init="init()">
+
+        <header>
+            <h1>📊 Contabilidad Pizzería</h1>
+            <div>
+                <button class="btn btn-primary" @click="showSyncCard = !showSyncCard">
+                    🔄 Sincronizar EticPOS
+                </button>
+                <button class="btn btn-primary" @click="showMovCard = !showMovCard">
+                    <span class="new"><span class="new"></span> </span>Registrar Movimiento
+                </button>
+
+                <button class="btn btn-secondary" @click="volver()">Volver</button>
+            </div>
+        </header>
+        <!-- SINCRONIZAR POR FECHAS -->
+
+        <section class="card" x-show="showSyncCard" x-transition>
+            <h2 style="margin-bottom: 12px;">🔄 Sincronizar EticPOS por rango</h2>
+            <form class="grid grid-2" @submit.prevent="syncRango()">
+                <div>
+                    <label for="syncDesde">Desde</label>
+                    <input id="syncDesde" type="date" x-model="syncDesde" :max="syncHasta" placeholder="Fecha inicial"
+                        required>
+                </div>
+                <div>
+                    <label for="syncHasta">Hasta</label>
+                    <input id="syncHasta" type="date" x-model="syncHasta" :min="syncDesde" placeholder="Fecha final"
+                        required>
+                </div>
+                <div class="form-actions" style="grid-column: 1 / -1;">
+                    <button class="btn btn-primary" type="submit" :disabled="loading">🚀 Ejecutar</button>
+                    <button class="btn btn-secondary" type="button" :disabled="loading" @click="showSyncCard = false">❌
+                        Cerrar</button>
+                </div>
+            </form>
+        </section>
+
+        <!-- Registrar movimiento-->
+
+        <section class="card" x-show="showMovCard" x-transition style="margin-top:16px">
+            <h2 style="margin-bottom: 12px;">📝 Registrar Movimiento</h2>
+            <form class="grid grid-2" @submit.prevent="registrarMovimiento()">
+                <div>
+                    <label for="metodo">Método de Pago</label>
+                    <select id="metodo" x-model="caja_id" required>
+                        <option value="" disabled selected>Seleccione método de pago</option>
+                        <template x-for="item in cuentas" :key="item.caja_id">
+                            <option :value="item.caja_id" x-text="item.nombre"></option>
+                        </template>
+                    </select>
+                </div>
+                <div>
+                    <label for="tipo">Tipo</label>
+                    <select id="tipo" x-model="tipoSeleccionado" required>
+                        <option value="" disabled selected>Seleccione el tipo</option>
+                        <template x-for="opt in opciones" :key="opt.id">
+                            <option :value="opt.id" x-text="opt.nombre"></option>
+                        </template>
+                    </select>
+                </div>
+                <div>
+                    <label for="concepto">Descripción</label>
+                    <input id="concepto" type="text" x-model="concepto" placeholder="Ej: Compra de insumos" required>
+                </div>
+                <div>
+                    <label for="monto">Monto</label>
+                    <input id="monto" type="number" x-model="monto" placeholder="Ej: 50000" min="0" step="0.01"
+                        required>
+                </div>
+                <div class="form-actions" style="grid-column: 1 / -1;">
+                    <button class="btn btn-primary" type="submit" :disabled="loading">🚀 Ejecutar</button>
+                    <button class="btn btn-secondary" type="button" :disabled="loading" @click="showMovCard = false">❌
+                        Cerrar</button>
+                </div>
+            </form>
+        </section>
+        <!-- SELECTOR MES -->
+        <section class="card">
+            <h2>📅 Resumen mensual</h2>
+            <div class="grid grid-4">
+                <select x-model="mes">
+                    <template x-for="m in meses" :key="m.value">
+                        <option :value="m.value" x-text="m.label"></option>
+                    </template>
+                </select>
+
+                <select x-model="anio">
+                    <template x-for="a in anios" :key="a">
+                        <option :value="a" x-text="a"></option>
+                    </template>
+                </select>
+
+                <button class="btn btn-primary" @click="cargarResumen()">Consultar</button>
+            </div>
+        </section>
+
+
+
+        <!-- DASHBOARD -->
+        <section class="grid grid-4" style="margin-top:16px">
+            <div class="card">
+                <h3>Ingresos</h3>
+                <div class="value" x-text="money(resumen.ingresos)"></div>
+            </div>
+            <div class="card">
+                <h3>Egresos</h3>
+                <div class="value" x-text="money(resumen.egresos)"></div>
+            </div>
+            <div class="card">
+                <h3>Saldo</h3>
+                <div class="value" x-text="money(resumen.saldo)"></div>
+            </div>
+        </section>
+
+        <!-- MEDIOS DE PAGO -->
+        <section class="card" style="margin-top:16px">
+            <h3>💳 Movimientos por método de pago</h3>
+            <table width="100%" style="border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 2px solid #e5e7eb; background: #f9fafb;">
+                        <th style="padding: 12px; text-align: left; font-weight: 600;">Método de Pago</th>
+                        <th style="padding: 12px; text-align: left; font-weight: 600;">Tipo</th>
+                        <th style="padding: 12px; text-align: right; font-weight: 600;">Monto</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="(m, idx) in resumen.por_metodo" :key="idx">
+                        <tr style="border-bottom: 1px solid #e5e7eb;">
+                            <td style="padding: 12px;" x-text="m.caja || '—'"></td>
+                            <td style="padding: 12px;">
+                                <template x-if="m.tipo">
+                                    <span
+                                        style="padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;"
+                                        :style="m.tipo === 'INGRESO' ? 'background: #d1fae5; color: #065f46;' : 'background: #fee2e2; color: #991b1b;'"
+                                        x-text="m.tipo"></span>
+                                </template>
+                            </td>
+                            <td style="padding: 12px; text-align: right; font-weight: 500;"
+                                x-text="money(m.total || 0)"></td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+            <template x-if="!resumen.por_metodo || resumen.por_metodo.length === 0">
+                <p style="text-align: center; color: #9ca3af; margin-top: 16px;">Sin movimientos en este período</p>
+            </template>
+        </section>
+
+        <!-- DETALLES DE MOVIMIENTOS -->
+        <section class="card" style="margin-top:16px">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h3>📋 Detalle de movimientos</h3>
+                <button class="btn btn-primary" @click="cargarDetalles()">
+                    <span x-show="!showDetalles">👁 Ver detalles</span>
+                    <span x-show="showDetalles">👁‍🗨 Ocultar detalles</span>
+                </button>
+            </div>
+
+            <template x-if="showDetalles">
+                <!-- TABLAS POR CAJA (MÉTODO DE PAGO) -->
+                <div style="display: grid; gap: 20px;">
+                    <template x-for="(caja, nombreCaja) in movimientos" :key="nombreCaja">
+                        <div>
+                            <h4 style="margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid #e5e7eb;">💳
+                                <span x-text="nombreCaja"></span>
+                            </h4>
+                            <table width="100%" style="border-collapse: collapse;">
+                                <thead>
+                                    <tr style="background: #f9fafb; border-bottom: 2px solid #e5e7eb;">
+                                        <th style="padding: 12px; text-align: left; font-weight: 600; width: 30%;">Tipo
+                                        </th>
+                                        <th style="padding: 12px; text-align: right; font-weight: 600; width: 20%;">
+                                            Monto</th>
+                                        <th style="padding: 12px; text-align: left; font-weight: 600; width: 50%;">
+                                            Descripción</th>
+                                        <th style="padding: 12px; text-align: left; font-weight: 600; width: 20%;">
+                                            Fecha</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- FILA INGRESOS -->
+                                    <tr style="background: #d1fae5; border-bottom: 1px solid #e5e7eb;">
+                                        <td style="padding: 12px; font-weight: 600; color: #065f46;">INGRESOS</td>
+                                        <td style="padding: 12px; text-align: right; font-weight: 700; color: #065f46;"
+                                            x-text="money(caja.ingresos)"></td>
+                                        <td style="padding: 12px; color: #065f46;">Total de ingresos</td>
+                                        <td style="padding: 12px;"></td>
+                                    </tr>
+
+                                    <!-- FILAS DE EGRESOS -->
+                                    <template x-for="(egreso, idx) in caja.egresos" :key="idx">
+                                        <tr style="border-bottom: 1px solid #e5e7eb;">
+                                            <td style="padding: 12px;">
+                                                <span
+                                                    style="padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; background: #fee2e2; color: #991b1b;"
+                                                    x-text="egreso.tipo"></span>
+                                            </td>
+                                            <td style="padding: 12px; text-align: right; font-weight: 600; color: #dc2626;"
+                                                x-text="money(egreso.monto)"></td>
+                                            <td style="padding: 12px;" x-text="egreso.concepto || '—'"></td>
+                                            <td style="padding: 12px; font-size: 12px; color: #666;" x-text="formatDate(egreso.fecha)"></td>
+                                        </tr>
+                                    </template>
+
+                                    <!-- FILA TOTAL -->
+                                    <tr style="background: #f3f4f6; border-top: 2px solid #e5e7eb; font-weight: 700;">
+                                        <td style="padding: 12px;">TOTAL</td>
+                                        <td style="padding: 12px; text-align: right;"
+                                            x-text="money(caja.ingresos - caja.totalEgresos)"
+                                            :style="(caja.ingresos - caja.totalEgresos) >= 0 ? 'color: #065f46;' : 'color: #dc2626;'">
+                                        </td>
+                                        <td style="padding: 12px;"></td>
+                                        <td style="padding: 12px;"></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </section>
+
+        <div class="toast" x-show="toast" x-text="toast"></div>
+    </div>
+
+    <script>
+        const CURRENT_USER = JSON.parse(localStorage.getItem('user') || 'null');
+        function headers(contentType) {
+            const h = {};
+            if (contentType) h['Content-Type'] = contentType;
+            if (CURRENT_USER && CURRENT_USER.role) h['x-user-role'] = CURRENT_USER.role;
+            return h;
+        }
+        // Evitar acceso directo: si el usuario no es admin (role 'admin' o id 0), redirigir al menú
+        if (!CURRENT_USER || !(
+            (String(CURRENT_USER.role).toLowerCase && String(CURRENT_USER.role).toLowerCase() === 'admin') ||
+            (Number(CURRENT_USER.role) === 0)
+        )) {
+            window.location.href = 'index.html';
+        }
+
+        function app() {
+            return {
+                mes: new Date().getMonth() + 1,
+                anio: new Date().getFullYear(),
+                resumen: { ingresos: 0, egresos: 0, saldo: 0, por_metodo: [] },
+                toast: '',
+                syncDesde: '',
+                syncHasta: '',
+                showSyncCard: false,
+                showMovCard: false,
+
+
+
+                loading: false,
+
+                meses: [
+                    { value: 1, label: 'Enero' }, { value: 2, label: 'Febrero' },
+                    { value: 3, label: 'Marzo' }, { value: 4, label: 'Abril' },
+                    { value: 5, label: 'Mayo' }, { value: 6, label: 'Junio' },
+                    { value: 7, label: 'Julio' }, { value: 8, label: 'Agosto' },
+                    { value: 9, label: 'Septiembre' }, { value: 10, label: 'Octubre' },
+                    { value: 11, label: 'Noviembre' }, { value: 12, label: 'Diciembre' }
+                ],
+
+                cuentas: [],
+                opciones: [],
+                tipoSeleccionado: '',
+                concepto: '',
+                monto: 0,
+                caja_id: '',
+                anios: [2024, 2025, 2026],
+                showDetalles: false,
+                movimientos: [],
+
+                async init() {
+                    const hoy = new Date();
+
+                    this.syncDesde = new Date(
+                        hoy.getFullYear(),
+                        hoy.getMonth(),
+                        1
+                    ).toISOString().substring(0, 10);
+
+                    this.syncHasta = hoy.toISOString().substring(0, 10);
+
+                    await this.cargarResumen();
+                    await this.cargarCuentas();
+
+                    // Cargar automáticamente cuando cambien mes o año
+                    this.$watch('mes', () => this.cargarResumen());
+                    this.$watch('anio', () => this.cargarResumen());
+                },
+                async cargarCuentas() {
+                    try {
+                        const res = await fetch('/api/contabilidad/cuentas', { headers: headers() });
+                        this.cuentas = await res.json();
+                    } catch {
+                        this.toastMsg('❌ Error Cargando cuentas');
+                    }
+                    await this.cargarCajas();
+                },
+                async cargarCajas() {
+                    await this.cargarTipo();
+                },
+                async cargarTipo() {
+                    try {
+                        const res = await fetch('/api/contabilidad/tipo', { headers: headers() });
+                        this.opciones = await res.json();
+                    } catch {
+                        this.toastMsg('❌ Error Cargando tipo');
+                    }
+                },
+                async registrarMovimiento() {
+                    try {
+                        const res = await fetch('/api/contabilidad/movimientos', {
+                            method: 'POST',
+                            headers: headers('application/json'),
+                            body: JSON.stringify({
+                                tipo_id: this.tipoSeleccionado,
+                                cuenta_id: 1,
+                                caja_id: this.caja_id,
+                                concepto: this.concepto,
+                                monto: this.monto
+                            })
+                        });
+
+                        const data = await res.json();
+
+                        if (!res.ok) throw data;
+
+                        this.toastMsg('✅ Movimiento registrado');
+
+                        // Resetear form
+                        this.tipoSeleccionado = '';
+                        this.concepto = '';
+                        this.monto = 0;
+                        this.caja_id = '';
+                        this.showMovCard = false;
+
+                        await this.cargarResumen();
+
+                    } catch {
+                        this.toastMsg('❌ Error registrando movimiento');
+                    }
+                },
+
+                async cargarResumen() {
+                    try {
+                        const res = await fetch(`/api/contabilidad/resumen-mensual?mes=${this.mes}&anio=${this.anio}`, { headers: headers() });
+                        this.resumen = await res.json();
+                    } catch {
+                        this.toastMsg('❌ Error cargando resumen');
+                    }
+                },
+
+                async cargarDetalles() {
+                    try {
+                        const res = await fetch(`/api/contabilidad/detalle-movimientos?mes=${this.mes}&anio=${this.anio}`, { headers: headers() });
+                        this.movimientos = await res.json();
+                        this.showDetalles = !this.showDetalles;
+                    } catch {
+                        this.toastMsg('❌ Error cargando detalles');
+                    }
+                },
+
+                async syncRango() {
+
+                    if (!this.syncDesde || !this.syncHasta) {
+                        return this.toastMsg('⚠ Selecciona ambas fechas');
+                    }
+
+                    this.loading = true;
+                    this.toastMsg('🔄 Sincronizando ventas...');
+
+                    try {
+
+                        const res = await fetch('/api/contabilidad/sync-unicenta', {
+                            method: 'POST',
+                            headers: headers('application/json'),
+                            body: JSON.stringify({
+                                desde: this.syncDesde,
+                                hasta: this.syncHasta
+                            })
+                        });
+
+                        const data = await res.json();
+
+                        if (!res.ok) throw data;
+
+                        this.toastMsg(`✅ ${data.synced} ventas sincronizadas`);
+
+                        await this.cargarResumen();
+
+                    } catch (err) {
+
+                        this.toastMsg('❌ Error al sincronizar');
+
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+
+                money(v) {
+                    return '$ ' + Number(v || 0).toLocaleString('es-CO');
+                },
+
+                formatDate(date) {
+                    if (!date) return '—';
+                    try {
+                        const d = new Date(date);
+                        return d.toLocaleDateString('es-CO', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit'
+                        });
+                    } catch (e) {
+                        return date;
+                    }
+                },
+
+                toastMsg(m) {
+                    this.toast = m;
+                    setTimeout(() => this.toast = '', 2500);
+                },
+
+                volver() {
+                    location.href = 'index.html';
+                }
+            }
+        }
+    </script>
+</body>
+
+</html>

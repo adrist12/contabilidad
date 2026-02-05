@@ -1,0 +1,19 @@
+{
+  "name": "pedidos-mesa-app",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "backend/server.js",
+  "scripts": {
+    "start": "node backend/server.js",
+    "init": "node backend/init.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "crypto": "^1.0.1",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.1",
+    "localtunnel": "^1.8.3",
+    "mysql2": "^3.16.0",
+    "socket.io": "^4.8.3"
+  }
+}

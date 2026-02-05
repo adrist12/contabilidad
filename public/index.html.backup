@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pizzería POS</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="/socket.io/socket.io.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+    /* El contenedor principal ocupa toda la pantalla */
+    .pos-screen {
+        display: grid;
+        grid-template-columns: 160px 1fr 380px;
+        height: 100vh;
+        background: #f4f4f4;
+    }
+
+    /* Columna 1: Categorías (Sidebar) */
+    .sidebar-categories {
+        background: #2c3e50;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+    }
+
+    .category-item {
+        padding: 20px 10px;
+        color: #ecf0f1;
+        text-align: center;
+        border-bottom: 1px solid #34495e;
+        cursor: pointer;
+        font-weight: 500;
+        font-size: 0.85rem;
+    }
+
+    .category-item.active {
+        background: #3498db;
+        border-left: 6px solid #fff;
+    }
+
+    /* Columna 2: Productos (Grid central) */
+    .product-view {
+        padding: 20px;
+        overflow-y: auto;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+        gap: 15px;
+        align-content: start;
+    }
+
+    .product-btn {
+        background: white;
+        aspect-ratio: 1/1;
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 10px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        cursor: pointer;
+        border: 2px solid transparent;
+    }
+
+    .product-btn:active { border-color: #3498db; }
+
+    /* Columna 3: Ticket (Panel derecho) */
+    .ticket-panel {
+        background: white;
+        border-left: 1px solid #ddd;
+        display: flex;
+        flex-direction: column;
+        box-shadow: -5px 0 15px rgba(0,0,0,0.05);
+    }
+
+    .ticket-header {
+        padding: 20px;
+        background: #f8f9fa;
+        border-bottom: 1px solid #eee;
+    }
+
+    .ticket-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 15px;
+    }
+</style>
+
+<div class="pos-screen" x-show="view === 'mesa'">
+    <aside class="sidebar-categories">
+        <template x-for="cat in categorias" :key="cat.id">
+            <div class="category-item" 
+                 :class="selectedCat === cat.id ? 'active' : ''"
+                 @click="seleccionarCategoria(cat.id)" 
+                 x-text="cat.name"></div>
+        </template>
+    </aside>
+
+    <main class="product-view">
+        <template x-for="prod in productos" :key="prod.id">
+            <div class="product-btn" @click="showModal(prod)">
+                <span x-text="prod.name" style="font-weight: bold; text-align: center;"></span>
+                <span x-text="'$' + prod.price" style="color: #27ae60; margin-top: 8px;"></span>
+            </div>
+        </template>
+    </main>
+
+    <section class="ticket-panel">
+        <div class="ticket-header">
+            <h3 style="margin:0">Mesa: <span x-text="mesaId"></span></h3>
+            <button @click="volverMesas()" style="margin-top:10px; width:100%">Cambiar Mesa</button>
+        </div>
+        
+        <div class="ticket-content">
+            <template x-for="(line, index) in pedido" :key="index">
+                <div style="display:flex; justify-content:space-between; margin-bottom:12px; font-size:0.9rem">
+                    <span x-text="line.qty + 'x ' + line.name"></span>
+                    <b x-text="'$' + (line.qty * line.price).toFixed(2)"></b>
+                </div>
+            </template>
+        </div>
+
+        <div style="padding:20px; background:#f8f9fa; border-top:1px solid #ddd">
+            <div style="display:flex; justify-content:space-between; font-size:1.5rem; font-weight:bold; margin-bottom:15px">
+                <span>TOTAL</span>
+                <span x-text="'$' + total.toFixed(2)"></span>
+            </div>
+            <button class="btn-success" style="width:100%; padding:15px" @click="enviarPedido()">
+                ENVIAR A COCINA
+            </button>
+        </div>
+    </section>
+</div>
+</head>
+
+<body x-data="appData()" x-init="init()">
+
+    <template x-if="view === 'mesas'">
+        <div class="container" style="padding: 20px;">
+            <h1 style="text-align: center; margin-bottom: 20px;">Salón Principal</h1>
+            <div class="mesa-grid"
+                style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 15px;">
+                <template x-for="mesa in mesas" :key="mesa.id">
+                    <div :class="'mesa-card ' + (mesa.isOccupied ? 'ocupada' : 'libre')" @click="abrirMesa(mesa.id)"
+                        style="padding: 20px; border-radius: 12px; text-align: center; cursor: pointer; transition: 0.3s;">
+                        <div style="font-size: 1.5rem; font-weight: bold;" x-text="mesa.name"></div>
+                        <small x-text="mesa.isOccupied ? 'Ocupada' : 'Libre'"></small>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </template>
+
+    <template x-if="view === 'mesa'">
+        <div class="main-layout">
+
+            <div class="products-section">
+                <div x-show="!showProductList">
+                    <h3 style="margin-bottom: 10px;">Categorías</h3>
+                    <div class="category-grid">
+                        <template x-for="cat in categorias" :key="cat.id">
+                            <div class="category-btn" @click="seleccionarCategoria(cat.id)" x-text="cat.name"></div>
+                        </template>
+                    </div>
+                </div>
+
+                <div x-show="showProductList" x-cloak>
+                    <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                        <button @click="showProductList = false"
+                            style="background: none; border: none; font-size: 1.5rem; cursor: pointer; margin-right: 10px;">⬅</button>
+                        <h3 style="margin: 0;">Seleccionar Producto</h3>
+                    </div>
+                    <div class="product-grid">
+                        <template x-for="prod in productos" :key="prod.id">
+                            <div class="product-card" @click="showModal(prod)">
+                                <span x-text="prod.name"></span>
+                                <b x-text="'$' + prod.price"></b>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ticket-section">
+                <div class="ticket-header">
+                    <span>Mesa: <b x-text="mesaId"></b></span>
+                    <button @click="volverMesas()"
+                        style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 5px 10px; border-radius: 4px; cursor: pointer;">Cerrar</button>
+                </div>
+
+                <div class="ticket-items">
+                    <template x-for="(item, idx) in pedido" :key="idx">
+                        <div class="order-item">
+                            <b x-text="item.qty"></b>
+                            <div style="padding-left: 5px;">
+                                <div x-text="item.name"></div>
+                                <small x-text="item.notes" style="color: #888; display: block;"></small>
+                            </div>
+                            <div style="text-align: right;" x-text="'$' + (item.price * item.qty).toFixed(2)"></div>
+                            <button class="btn-remove" @click="eliminarItem(idx)">×</button>
+                        </div>
+                    </template>
+                </div>
+
+                <div class="ticket-footer">
+                    <div
+                        style="display: flex; justify-content: space-between; font-size: 1.2rem; font-weight: bold; margin-bottom: 10px;">
+                        <span>TOTAL</span>
+                        <span>$<span x-text="total.toFixed(2)"></span></span>
+                    </div>
+                    <button class="btn-pay" @click="cerrarMesa()" :disabled="pedido.length === 0">
+                        REGISTRAR VENTA
+                    </button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <div class="modal" x-show="currentProduct" x-cloak
+        style="display: flex; align-items: center; justify-content: center; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 3000;">
+        <div
+            style="background: white; padding: 25px; border-radius: 15px; width: 320px; box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
+            <h2 x-text="currentProduct?.name" style="margin-top: 0;"></h2>
+            <input type="text" placeholder="Notas adicionales..." x-model="notes"
+                style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin: 15px 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <button @click="quantity > 1 ? quantity-- : null"
+                    style="width: 50px; height: 50px; border-radius: 50%; border: 1px solid #ccc; font-size: 1.5rem;">-</button>
+                <span style="font-size: 2rem; font-weight: bold;" x-text="quantity"></span>
+                <button @click="quantity++"
+                    style="width: 50px; height: 50px; border-radius: 50%; border: 1px solid #ccc; font-size: 1.5rem;">+</button>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button @click="confirmarAgregar()"
+                    style="flex: 1; padding: 12px; background: #27ae60; color: white; border: none; border-radius: 8px; font-weight: bold;">AGREGAR</button>
+                <button @click="currentProduct = null"
+                    style="flex: 1; padding: 12px; background: #eee; border: none; border-radius: 8px;">CANCELAR</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container"></div>
+
+    <script>
+        function appData() {
+            return {
+                view: 'mesas', mesas: [], categorias: [], productos: [], mesaId: null, pedido: [], total: 0,
+                showProductList: false, currentProduct: null, quantity: 1, notes: '', socket: null,
+
+                async init() {
+                    this.socket = io();
+                    this.socket.on('pedido-actualizado', (data) => { if (this.mesaId === data.mesaId) this.cargarPedidoShared(); });
+                    this.socket.on('mesas-actualizadas', () => this.cargarMesas());
+                    this.cargarMesas();
+                    this.cargarCategorias();
+                },
+
+                showToast(msg) {
+                    const t = document.createElement('div'); t.className = 'toast'; t.innerText = msg;
+                    document.getElementById('toast-container').appendChild(t);
+                    setTimeout(() => t.remove(), 2500);
+                },
+
+                async cargarMesas() { this.mesas = await (await fetch('/api/mesas')).json(); },
+                async cargarCategorias() { this.categorias = await (await fetch('/api/categorias')).json(); },
+
+                async abrirMesa(id) {
+                    this.mesaId = id; this.view = 'mesa';
+                    this.socket.emit('unir-mesa', id);
+                    this.cargarPedidoShared();
+                },
+
+                async cargarPedidoShared() {
+                    const data = await (await fetch(`/api/shared/${this.mesaId}`)).json();
+                    this.pedido = data.lines || [];
+                    this.total = this.pedido.reduce((acc, i) => acc + (i.price * i.qty), 0);
+                },
+
+                async seleccionarCategoria(id) {
+                    this.productos = await (await fetch(`/api/productos/${id}`)).json();
+                    this.showProductList = true;
+                },
+
+                showModal(prod) { this.currentProduct = prod; this.quantity = 1; this.notes = ''; },
+
+                async confirmarAgregar() {
+                    const res = await fetch(`/api/shared/${this.mesaId}/add`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ id: this.currentProduct.id, name: this.currentProduct.name, price: this.currentProduct.price, qty: this.quantity, notes: this.notes })
+                    });
+                    if (res.ok) { this.showToast("Agregado"); this.currentProduct = null; }
+                },
+
+                async eliminarItem(index) {
+                    if (!confirm("¿Eliminar este producto?")) return;
+                    const res = await fetch(`/api/shared/${this.mesaId}/remove/${index}`, { method: 'DELETE' });
+                    if (res.ok) this.showToast("Producto eliminado");
+                },
+
+                async cerrarMesa() {
+                    if (!confirm("¿Pagar y liberar mesa?")) return;
+                    const res = await fetch(`/api/shared/${this.mesaId}/checkout`, { method: 'POST' });
+                    if (res.ok) { this.showToast("Mesa liberada"); this.view = 'mesas'; }
+                },
+
+                volverMesas() { this.view = 'mesas'; this.mesaId = null; this.cargarMesas(); }
+            }
+        }
+    </script>
+</body>
+
+</html>
